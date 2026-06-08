@@ -1,8 +1,3 @@
-bash
-
-cat /home/claude/nova-render/server.js
-Output
-
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -12,7 +7,6 @@ const API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const JSONBIN_KEY = process.env.JSONBIN_API_KEY || "";
 const JSONBIN_BIN = process.env.JSONBIN_BIN_ID || "";
 
-// In-memory fallback if JSONBin not configured
 var memoryData = {};
 
 async function readBody(req) {
@@ -32,7 +26,6 @@ const server = http.createServer(async function(req, res) {
     res.writeHead(200); res.end(); return;
   }
 
-  // ── Serve index.html ──
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html")) {
     fs.readFile(path.join(__dirname, "index.html"), function(err, data) {
       if (err) { res.writeHead(404); res.end("Not found"); return; }
@@ -42,7 +35,6 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // ── Load saved data ──
   if (req.method === "GET" && req.url === "/data") {
     try {
       if (JSONBIN_KEY && JSONBIN_BIN) {
@@ -63,7 +55,6 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // ── Save data ──
   if (req.method === "POST" && req.url === "/data") {
     try {
       var body = await readBody(req);
@@ -89,7 +80,6 @@ const server = http.createServer(async function(req, res) {
     return;
   }
 
-  // ── Anthropic API proxy ──
   if (req.method === "POST" && req.url === "/api") {
     try {
       if (!API_KEY) {
@@ -130,6 +120,6 @@ server.listen(PORT, function() {
   if (JSONBIN_KEY && JSONBIN_BIN) {
     console.log("Cloud storage: JSONBin enabled");
   } else {
-    console.log("Cloud storage: using memory (set JSONBIN_API_KEY and JSONBIN_BIN_ID for persistence)");
+    console.log("Cloud storage: using memory");
   }
 });
