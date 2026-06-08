@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: nova-fastest-labs
+    env: node
+    buildCommand: echo "No build needed"
+    startCommand: node server.js
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
