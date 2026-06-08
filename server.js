@@ -1,3 +1,8 @@
+bash
+
+cat /home/claude/nova-render/server.js
+Output
+
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
