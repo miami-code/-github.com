@@ -204,6 +204,10 @@ body{font-family:'Inter',sans-serif;background:#0f1117;color:#e2e8f0;min-height:
   <button class="nav-tab" id="tab-inventory">&#128230; Inventory</button>
   <button class="nav-tab" id="tab-visits">&#128205; Visit Log</button>
 </div>
+<div id="saveStatus" style="background:#0a1520;padding:5px 28px;font-size:11px;font-family:JetBrains Mono,monospace;color:#2a4060;border-bottom:1px solid #1e2d45;display:flex;align-items:center;gap:6px;">
+  <span id="saveIcon">&#9679;</span>
+  <span id="saveText">Ready</span>
+</div>
 
 <div class="page active" id="page-leads">
   <div class="status-bar">
@@ -343,12 +347,87 @@ body{font-family:'Inter',sans-serif;background:#0f1117;color:#e2e8f0;min-height:
 </div>
 
 <script>
+// JSONBin persistent storage
+var JSONBIN_API_KEY = "";  // Set via Render environment variable JSONBIN_API_KEY
+var JSONBIN_BIN_ID = "";   // Set via Render environment variable JSONBIN_BIN_ID
+
 var inventory = { airport: [], west: [] };
+var visits = [];  // move visits here so it saves too
 var batchCount = 0;
 var allLeads = [];
 var totalPipeline = 0;
 var progressTimer = null;
 var currentProgress = 0;
+var isSaving = false;
+var saveTimer = null;
+
+async function loadData() {
+  showSaveStatus("Loading data...", "#60a5fa");
+  try {
+    var res = await fetch("/data");
+    if (!res.ok) {
+      showSaveStatus("Load failed - status " + res.status, "#ef4444");
+      return;
+    }
+    var data = await res.json();
+    if (data.inventory) inventory = data.inventory;
+    if (data.visits) visits = data.visits;
+    if (data.batchCount) batchCount = data.batchCount;
+    if (data.totalPipeline) totalPipeline = data.totalPipeline;
+    if (data.allLeads) allLeads = data.allLeads;
+    renderInventory("airport");
+    renderInventory("west");
+    renderVisits();
+    updateStats();
+    showSaveStatus("Data loaded from cloud", "#22c55e");
+    setTimeout(function(){ showSaveStatus("Ready", "#2a4060"); }, 2000);
+  } catch(e) {
+    showSaveStatus("Load error: " + e.message, "#ef4444");
+    console.log("Could not load saved data:", e.message);
+  }
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveData, 1000);
+}
+
+function showSaveStatus(msg, color) {
+  var icon = document.getElementById("saveIcon");
+  var text = document.getElementById("saveText");
+  if (icon) icon.style.color = color;
+  if (text) text.textContent = msg;
+}
+
+async function saveData() {
+  if (isSaving) return;
+  isSaving = true;
+  showSaveStatus("Saving...", "#f59e0b");
+  try {
+    var payload = {
+      inventory: inventory,
+      visits: visits,
+      batchCount: batchCount,
+      totalPipeline: totalPipeline,
+      allLeads: allLeads
+    };
+    var res = await fetch("/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      showSaveStatus("Saved to cloud", "#22c55e");
+      setTimeout(function(){ showSaveStatus("Ready", "#2a4060"); }, 2000);
+    } else {
+      showSaveStatus("Save failed - status " + res.status, "#ef4444");
+    }
+  } catch(e) {
+    showSaveStatus("Save error: " + e.message, "#ef4444");
+    console.log("Save error:", e.message);
+  }
+  isSaving = false;
+}
 
 function gid(id) { return document.getElementById(id); }
 
@@ -377,6 +456,7 @@ function addItem(loc) {
   qtyEl.value = "";
   nameEl.focus();
   renderInventory(loc);
+  scheduleSave();
 }
 
 function updateQty(loc, id, delta) {
@@ -387,11 +467,13 @@ function updateQty(loc, id, delta) {
     }
   }
   renderInventory(loc);
+  scheduleSave();
 }
 
 function deleteItem(loc, id) {
   inventory[loc] = inventory[loc].filter(function(x) { return x.id !== id; });
   renderInventory(loc);
+  scheduleSave();
 }
 
 function renderInventory(loc) {
@@ -610,7 +692,7 @@ async function runAgent() {
         model: "claude-sonnet-4-5",
         max_tokens: 3000,
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: "Generate batch " + batchCount + ". Return 4 Miami leads as raw JSON only. No markdown. Start with { end with }. Keep outreachEmail under 150 words." }]
+        messages: [{ role: "user", content: "Generate batch " + batchCount + ". Return ONLY 1 Miami lead as raw JSON only. No markdown. Start with { end with }. Max 40 words per field. outreachEmail max 50 words." }]
       })
     });
 
@@ -637,6 +719,7 @@ async function runAgent() {
     var topScore = Math.max.apply(null, newLeads.map(function(l) { return l.score || 0; }));
     gid("statTop").textContent = topScore;
     updateStats();
+    scheduleSave();
     stopProgress(100);
     setStatus("Batch " + batchCount + " complete - " + newLeads.length + " leads - $" + batchVal.toLocaleString() + "/mo added", "idle");
     renderLeads(newLeads);
@@ -771,7 +854,6 @@ async function scheduleZoom(cid, contactName, company, contactEmail) {
 }
 
 // Visit Log
-var visits = [];
 var visitFilter = "all";
 
 function saveVisit() {
@@ -800,6 +882,7 @@ function saveVisit() {
   gid("vNotes").value = "";
   gid("vStatus").value = "Interested";
   renderVisits();
+  scheduleSave();
 }
 
 function updateVisitStatus(id, newStatus) {
@@ -807,11 +890,13 @@ function updateVisitStatus(id, newStatus) {
     if (visits[i].id === id) { visits[i].status = newStatus; break; }
   }
   renderVisits();
+  scheduleSave();
 }
 
 function deleteVisit(id) {
   visits = visits.filter(function(v) { return v.id !== id; });
   renderVisits();
+  scheduleSave();
 }
 
 function filterVisits(f) {
@@ -926,6 +1011,7 @@ document.addEventListener("DOMContentLoaded", function() {
   gid("airportItemQty").addEventListener("keydown", function(e) { if (e.key === "Enter") addItem("airport"); });
   gid("westItemQty").addEventListener("keydown", function(e) { if (e.key === "Enter") addItem("west"); });
   gid("reportBtn").addEventListener("click", sendWeeklyReport);
+  loadData();
 
   gid("tab-visits").addEventListener("click", function() { switchTab("visits"); });
   gid("visitAddBtn").addEventListener("click", saveVisit);
